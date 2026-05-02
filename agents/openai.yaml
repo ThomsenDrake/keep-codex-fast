@@ -1,0 +1,8 @@
+interface:
+  display_name: "Keep Codex Fast"
+  short_description: "Safe cleanup for Codex local state"
+  brand_color: "#22A6A6"
+  default_prompt: "Use $keep-codex-fast to inspect my Codex local state and recommend a safe cleanup plan."
+
+policy:
+  allow_implicit_invocation: true

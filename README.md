@@ -1,0 +1,104 @@
+# Keep Codex Fast
+
+A backup-first, archive-only Codex skill for cleaning local agent state when Codex starts feeling slow after weeks of chats, terminals, worktrees, logs, and project history.
+
+The skill is intentionally conservative:
+
+- report-only by default
+- backs up before touching state
+- archives instead of deleting
+- writes manifests and restore scripts
+- skips mutating cleanup if Codex is still running
+- recommends handoff docs and reactivation prompts before archiving chats you may want to continue
+- reports heavy Node/dev processes without killing them
+
+## Quick Use
+
+Ask Codex:
+
+```text
+Use $keep-codex-fast to inspect my Codex local state and recommend a safe cleanup plan.
+```
+
+## Install
+
+Once this repo is available on GitHub, install it with Codex's skill installer by pointing it at the repo:
+
+```text
+Install the keep-codex-fast skill from https://github.com/vibeforge1111/keep-codex-fast
+```
+
+Or clone/copy this folder into your Codex skills directory as `keep-codex-fast`.
+
+For chats you still care about:
+
+```text
+Use $keep-codex-fast to identify active repo chats I may want to continue, create comprehensive handoff docs and reactivation prompts for them, then archive only after continuity is preserved.
+```
+
+Then, after reviewing the report and closing Codex if needed:
+
+```text
+Use $keep-codex-fast to apply the cleanup with backups, archive old non-pinned sessions, move stale worktrees, rotate large logs, and verify the result.
+```
+
+## Manual Script Use
+
+From this repo:
+
+```bash
+python scripts/keep_codex_fast.py
+```
+
+Apply cleanup:
+
+```bash
+python scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktree-older-than-days 7
+```
+
+Wait for Codex to exit before applying:
+
+```bash
+python scripts/keep_codex_fast.py --apply --wait-for-codex-exit
+```
+
+## What It Cleans
+
+- old non-pinned active sessions
+- stale worktrees
+- large `logs_2.sqlite*` files
+- dead/temp project entries in `config.toml`
+- Windows `\\?\C:\...` extended path mismatches in local SQLite text fields
+
+It does not permanently delete chats, logs, or worktrees. It moves them into archive folders under `~/.codex` and writes backup/restore artifacts under `~/Documents/Codex/codex-backups` when available.
+
+## Onboarding Flow
+
+1. Run a report-only inspection.
+2. Review large active chats and decide what still matters.
+3. Create handoff docs and reactivation prompts for chats/repos you want to continue.
+4. Close Codex before applying cleanup.
+5. Apply archive-only cleanup.
+6. Re-run inspection to verify the result.
+
+## Handoff Before Archive
+
+For important repo work, the skill should help create a handoff doc before archiving the old chat. A good handoff includes:
+
+- repo/path and branch
+- current goal
+- work already completed
+- files touched or investigated
+- commands/tests run
+- known errors or warnings
+- open decisions
+- next concrete steps
+- a reactivation prompt for starting fresh
+
+This is the pattern that keeps Codex fast without losing context: chats for execution, handoff docs for memory, archives for history, fresh threads for speed.
+
+## Why This Exists
+
+Long-running AI coding workspaces accumulate local drag. The model may be fine, but local sessions, logs, worktrees, and stale project metadata can make the app feel slower and more fragile.
+
+This skill turns cleanup into a boring weekly maintenance routine.
