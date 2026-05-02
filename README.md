@@ -35,9 +35,19 @@ It helps Codex:
 - prune dead project references
 - report heavy Node/dev processes without killing them
 
-## Quick Start
+## Install
 
 Ask Codex:
+
+```text
+Install the keep-codex-fast skill from https://github.com/vibeforge1111/keep-codex-fast
+```
+
+Or clone/copy this folder into your Codex skills directory as `keep-codex-fast`.
+
+## Quick Start
+
+After installing, ask Codex:
 
 ```text
 Use $keep-codex-fast to inspect my Codex local state and recommend a safe maintenance plan.
@@ -117,16 +127,6 @@ The reminder should:
 - report heavy Node/dev processes without killing them
 - tell me that manual apply should only happen after I confirm handoffs exist or are not needed and Codex is closed
 ```
-
-## Install
-
-Ask Codex:
-
-```text
-Install the keep-codex-fast skill from https://github.com/vibeforge1111/keep-codex-fast
-```
-
-Or clone/copy this folder into your Codex skills directory as `keep-codex-fast`.
 
 ## Advanced: Manual Script Use
 
