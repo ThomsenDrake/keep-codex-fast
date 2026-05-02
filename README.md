@@ -10,6 +10,7 @@ The skill is intentionally conservative:
 - writes manifests and restore scripts
 - skips mutating cleanup if Codex is still running
 - recommends handoff docs and reactivation prompts before archiving chats you may want to continue
+- avoids copying auth files by default
 - reports heavy Node/dev processes without killing them
 
 ## Quick Use
@@ -22,7 +23,7 @@ Use $keep-codex-fast to inspect my Codex local state and recommend a safe cleanu
 
 ## Install
 
-Once this repo is available on GitHub, install it with Codex's skill installer by pointing it at the repo:
+Install it with Codex's skill installer by pointing it at the repo:
 
 ```text
 Install the keep-codex-fast skill from https://github.com/vibeforge1111/keep-codex-fast

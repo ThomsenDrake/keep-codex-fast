@@ -16,7 +16,7 @@ Use this skill to inspect and safely clean local Codex state. The goal is to red
 - Archive or move files instead of deleting them. Do not permanently delete user chats, logs, worktrees, memories, skills, plugins, or automations.
 - Write manifests and restore scripts when sessions/worktrees are moved.
 - If Codex is running, default to report-only. Apply cleanup only after Codex is closed or when the user explicitly accepts waiting for Codex to exit.
-- Never modify auth or memory files except backing them up.
+- Never modify or copy auth files unless the user explicitly asks for that. Back up memory/skill/plugin/automation files before touching local state.
 - Before archiving any active repo chat the user may want to continue, recommend creating a comprehensive handoff doc plus a reactivation prompt.
 
 ## Default Workflow

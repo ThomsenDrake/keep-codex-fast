@@ -142,8 +142,6 @@ def copy_if_exists(src: Path, dst: Path) -> None:
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
-        if dst.exists():
-            shutil.rmtree(dst)
         shutil.copytree(
             src,
             dst,
@@ -157,6 +155,7 @@ def copy_if_exists(src: Path, dst: Path) -> None:
                 "__pycache__",
                 ".pytest_cache",
             ),
+            dirs_exist_ok=True,
         )
     else:
         shutil.copy2(src, dst)
@@ -167,7 +166,6 @@ def backup_metadata(codex_home: Path, backup_root: Path) -> None:
     backup_root.mkdir(parents=True, exist_ok=True)
     for name in [
         ".codex-global-state.json",
-        "auth.json",
         "config.toml",
         "history.jsonl",
         "installation_id",
