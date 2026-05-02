@@ -23,6 +23,39 @@ Ask Codex:
 Use $keep-codex-fast to inspect my Codex local state and recommend a safe cleanup plan.
 ```
 
+## Before Cleanup: Make Handoffs
+
+Before archiving old active chats, create handoff documents for any repo/session you may want to continue.
+
+A handoff document is a small continuity file. It turns a long chat into a durable project note: what you were doing, what changed, what files matter, what commands ran, what is broken, and what to do next.
+
+This lets you archive the heavy chat history and start a fresh Codex thread without losing the thread of the work.
+
+Recommended habit: create handoffs for all active repo chats you may continue, even before you feel slowdown. It keeps chats for execution and docs for memory.
+
+Copy-paste this into each active repo chat you care about:
+
+```text
+Create a comprehensive handoff document for this repo/session before I archive or clean up Codex history.
+
+Include:
+- repo/path and branch
+- current goal
+- what we already completed
+- files touched or investigated
+- commands/tests already run
+- known errors, warnings, or failing checks
+- open decisions
+- constraints, user preferences, and do-not-touch areas
+- the next 3-7 concrete steps
+
+Also include a reactivation prompt I can paste into a fresh Codex chat so it can continue from this handoff without relying on the old chat context.
+
+Save the handoff in a sensible repo-local place like docs/codex-handoffs/YYYY-MM-DD-topic.md unless this repo already has a better handoff location.
+```
+
+Then start the fresh chat with the reactivation prompt from that handoff.
+
 ## Install
 
 Install it with Codex's skill installer by pointing it at the repo:
@@ -78,8 +111,8 @@ It does not permanently delete chats, logs, or worktrees. It moves them into arc
 ## Onboarding Flow
 
 1. Run a report-only inspection.
-2. Review large active chats and decide what still matters.
-3. Create handoff docs and reactivation prompts for chats/repos you want to continue.
+2. Create handoff docs and reactivation prompts for active repo chats you may want to continue.
+3. Review large active chats and decide what can be archived.
 4. Close Codex before applying cleanup.
 5. Apply archive-only cleanup.
 6. Re-run inspection to verify the result.
