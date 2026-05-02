@@ -57,6 +57,13 @@ python scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktre
 python scripts/keep_codex_fast.py
 ```
 
+8. Ask whether the user wants a recurring report-only reminder:
+   - weekly for heavy Codex use across many repos/terminals
+   - biweekly for lighter use
+   - no reminder if they prefer manual cleanup
+
+If the user wants automation and the Codex app automation tool is available, create only a recurring report/reminder automation. Do not recommend recurring mutating cleanup, because automation cannot know whether the user created handoffs. The prompt must say not to pass `--apply`, not to archive/move/prune/rotate/normalize/delete/mutate local state, and to remind the user that manual cleanup should happen only after handoffs are confirmed and Codex is closed.
+
 ## What Cleanup Does
 
 - Backs up important metadata to `~/Documents/Codex/codex-backups/keep-codex-fast-*`.
@@ -73,6 +80,7 @@ python scripts/keep_codex_fast.py
 - Use handoff docs for important old threads.
 - Start fresh threads from handoff docs instead of repeatedly resuming giant chats.
 - Run weekly maintenance if Codex is used daily across many repos/terminals.
+- Offer weekly or biweekly report-only reminders after the first successful cleanup; do not assume the user wants recurring maintenance.
 - When in doubt, leave a chat active or ask the user. Never archive a chat that is pinned, current, or explicitly marked as still needed without a handoff.
 
 ## Handoff Doc + Reactivation Prompt
@@ -120,6 +128,25 @@ Add a reactivation prompt at the top or bottom:
 
 ```text
 We are continuing from this handoff. Read this document first, inspect the current repo state, verify what still applies, and continue from the next steps without assuming the old chat context is available.
+```
+
+## Automation Reminder Prompt
+
+Offer this after the first report/apply/verify cycle:
+
+```text
+Use $keep-codex-fast to create a recurring Codex maintenance reminder.
+
+Schedule it weekly if I use Codex heavily, or biweekly if that seems safer.
+
+The reminder should:
+- run the keep-codex-fast report first
+- never pass --apply or run mutating cleanup automatically
+- never archive, move, prune, rotate, normalize, delete, or mutate local Codex state
+- remind me to create comprehensive handoff docs and reactivation prompts for active repo chats before any manual cleanup
+- summarize active session size, archived session size, extended path candidates, old session candidates, worktree candidates, log size, and top Node/dev processes
+- report heavy Node/dev processes without killing them
+- tell me that manual cleanup should only happen after I confirm handoffs exist or are not needed and Codex is closed
 ```
 
 ## Anti-Patterns

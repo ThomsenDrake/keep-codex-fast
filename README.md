@@ -56,6 +56,35 @@ Save the handoff in a sensible repo-local place like docs/codex-handoffs/YYYY-MM
 
 Then start the fresh chat with the reactivation prompt from that handoff.
 
+## Optional: Make It A Weekly Or Biweekly Reminder
+
+After you run the first cleanup safely, you can ask Codex to turn this into a recurring maintenance reminder.
+
+Important: recurring maintenance should be report-only. It can inspect, summarize, and remind you to create handoffs, but it should not archive, move, prune, rotate, normalize, delete, or mutate local Codex state automatically.
+
+Why: an automation cannot reliably know whether you created handoff docs for the active repo chats you still care about. Mutating cleanup should stay manual unless you are present to confirm handoffs exist or are not needed.
+
+Weekly is best if you use Codex heavily across many repos and terminals. Biweekly is enough if your usage is lighter.
+
+Copy-paste this into Codex:
+
+```text
+Use $keep-codex-fast to create a recurring Codex maintenance reminder.
+
+Schedule it weekly if I use Codex heavily, or biweekly if that seems safer.
+
+The reminder should:
+- run the keep-codex-fast report first
+- never pass --apply or run mutating cleanup automatically
+- never archive, move, prune, rotate, normalize, delete, or mutate local Codex state
+- remind me to create comprehensive handoff docs and reactivation prompts for active repo chats before any manual cleanup
+- summarize active session size, archived session size, extended path candidates, old session candidates, worktree candidates, log size, and top Node/dev processes
+- report heavy Node/dev processes without killing them
+- tell me that manual cleanup should only happen after I confirm handoffs exist or are not needed and Codex is closed
+```
+
+If your Codex app supports automations, ask it to schedule this reminder directly. If not, keep the prompt saved and run it manually once a week or every other week.
+
 ## Install
 
 Install it with Codex's skill installer by pointing it at the repo:
@@ -116,6 +145,7 @@ It does not permanently delete chats, logs, or worktrees. It moves them into arc
 4. Close Codex before applying cleanup.
 5. Apply archive-only cleanup.
 6. Re-run inspection to verify the result.
+7. Decide whether to make this a weekly or biweekly report-only reminder.
 
 ## Handoff Before Archive
 
