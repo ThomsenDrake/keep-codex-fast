@@ -56,13 +56,16 @@ def make_fake_home(root: Path) -> dict[str, Path]:
     state_db = codex_home / "state_5.sqlite"
     conn = sqlite3.connect(state_db)
     conn.execute(
-        "create table threads (id text primary key, title text, rollout_path text, cwd text, updated_at integer, archived_at integer, archived integer)"
+        "create table threads (id text primary key, title text, first_user_message text, rollout_path text, cwd text, updated_at integer, archived_at integer, archived integer)"
     )
+    long_title = "Title " + ("x" * 300)
+    long_preview = "Preview " + ("y" * 600)
     conn.execute(
-        "insert into threads values (?,?,?,?,?,?,?)",
+        "insert into threads values (?,?,?,?,?,?,?,?)",
         (
             "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "Old test thread",
+            long_title,
+            long_preview,
             str(rollout),
             r"\\?\C:\DefinitelyMissingKeepCodexFast",
             int(old_time),
@@ -96,6 +99,9 @@ def assert_report_mode(module) -> None:
             archive_older_than_days=10,
             worktree_older_than_days=7,
             rotate_logs_above_mb=0,
+            thread_title_limit=120,
+            thread_preview_limit=240,
+            repair_thread_metadata_bloat=False,
         )
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -106,8 +112,15 @@ def assert_report_mode(module) -> None:
         assert paths["log_file"].exists(), "report mode must not rotate logs"
         assert not backup.exists(), "report mode must not create backup artifacts"
         assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" not in text
-        assert "Old test thread" not in text
         assert str(paths["codex_home"]) not in text
+        conn = sqlite3.connect(paths["state_db"])
+        title, preview = conn.execute(
+            "select title, first_user_message from threads where id=?",
+            ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",),
+        ).fetchone()
+        conn.close()
+        assert len(title) > 120, "report mode must not trim titles"
+        assert len(preview) > 240, "report mode must not trim previews"
 
 
 def assert_backup_only_mode(module) -> None:
@@ -124,6 +137,9 @@ def assert_backup_only_mode(module) -> None:
             archive_older_than_days=10,
             worktree_older_than_days=7,
             rotate_logs_above_mb=0,
+            thread_title_limit=120,
+            thread_preview_limit=240,
+            repair_thread_metadata_bloat=False,
         )
         assert module.run(args) == 0
         assert paths["rollout"].exists(), "backup-only mode must not move sessions"
@@ -132,6 +148,14 @@ def assert_backup_only_mode(module) -> None:
         assert (backup / "state_5.sqlite").exists()
         assert (backup / "config.toml").exists()
         assert not (backup / "moved-sessions.jsonl").exists()
+        conn = sqlite3.connect(paths["state_db"])
+        title, preview = conn.execute(
+            "select title, first_user_message from threads where id=?",
+            ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",),
+        ).fetchone()
+        conn.close()
+        assert len(title) > 120, "backup-only mode must not trim titles"
+        assert len(preview) > 240, "backup-only mode must not trim previews"
 
 
 def assert_session_alias_detection(module) -> None:
@@ -169,12 +193,15 @@ def assert_apply_mode(module) -> None:
             archive_older_than_days=10,
             worktree_older_than_days=7,
             rotate_logs_above_mb=0,
+            thread_title_limit=120,
+            thread_preview_limit=240,
+            repair_thread_metadata_bloat=True,
         )
         assert module.run(args) == 0
 
         conn = sqlite3.connect(paths["state_db"])
-        archived, archived_at, rollout_path, cwd = conn.execute(
-            "select archived, archived_at, rollout_path, cwd from threads where id=?",
+        archived, archived_at, rollout_path, cwd, title, preview = conn.execute(
+            "select archived, archived_at, rollout_path, cwd, title, first_user_message from threads where id=?",
             ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",),
         ).fetchone()
         conn.close()
@@ -183,6 +210,8 @@ def assert_apply_mode(module) -> None:
         assert archived_at is not None
         assert "archived_sessions" in rollout_path
         assert cwd == r"C:\DefinitelyMissingKeepCodexFast"
+        assert len(title) <= 120
+        assert len(preview) <= 240
         assert not paths["rollout"].exists()
         assert not paths["worktree"].exists()
         assert not paths["log_file"].exists()
@@ -190,8 +219,46 @@ def assert_apply_mode(module) -> None:
             encoding="utf-8"
         )
         assert (backup / "restore-sessions.py").exists()
+        assert (backup / "restore-thread-metadata.py").exists()
         assert (backup / "moved-sessions.jsonl").exists()
+        assert (backup / "thread-metadata-repairs.jsonl").exists()
         assert (backup / "moved-worktrees.jsonl").exists()
+        session_index = paths["codex_home"] / "session_index.jsonl"
+        assert session_index.exists()
+        assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in session_index.read_text(encoding="utf-8")
+
+
+def assert_normal_apply_does_not_repair_thread_metadata(module) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        paths = make_fake_home(Path(td))
+        backup = Path(td) / "backup-normal-apply"
+        args = argparse.Namespace(
+            apply=True,
+            backup_only=False,
+            details=False,
+            wait_for_codex_exit=False,
+            codex_home=str(paths["codex_home"]),
+            backup_root=str(backup),
+            archive_older_than_days=10,
+            worktree_older_than_days=7,
+            rotate_logs_above_mb=64,
+            thread_title_limit=120,
+            thread_preview_limit=240,
+            repair_thread_metadata_bloat=False,
+        )
+        assert module.run(args) == 0
+
+        conn = sqlite3.connect(paths["state_db"])
+        title, preview = conn.execute(
+            "select title, first_user_message from threads where id=?",
+            ("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",),
+        ).fetchone()
+        conn.close()
+
+        assert len(title) > 120, "normal apply must not trim titles without explicit repair flag"
+        assert len(preview) > 240, "normal apply must not trim previews without explicit repair flag"
+        assert not (backup / "thread-metadata-repairs.jsonl").exists()
+        assert not (backup / "restore-thread-metadata.py").exists()
 
 
 def main() -> int:
@@ -199,6 +266,7 @@ def main() -> int:
     assert_report_mode(module)
     assert_backup_only_mode(module)
     assert_session_alias_detection(module)
+    assert_normal_apply_does_not_repair_thread_metadata(module)
     assert_apply_mode(module)
     print("smoke tests passed")
     return 0
