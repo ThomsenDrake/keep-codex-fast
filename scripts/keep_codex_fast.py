@@ -30,6 +30,8 @@ TEMP_PROJECT_RE = re.compile(
     r"(\\AppData\\Local\\Temp\\|/AppData/Local/Temp/|\\Temp\\codex-|/Temp/codex-|\\Temp\\spark-|/Temp/spark-)",
     re.I,
 )
+DEFAULT_TITLE_LIMIT = 120
+DEFAULT_PREVIEW_LIMIT = 240
 
 
 @dataclass
@@ -40,6 +42,15 @@ class SessionCandidate:
     source: Path
     relative: Path
     updated_at: int | None
+
+
+@dataclass
+class ThreadMetadataRepair:
+    thread_id: str
+    old_title: str
+    new_title: str
+    old_preview: str
+    new_preview: str
 
 
 def now_stamp() -> str:
@@ -210,6 +221,234 @@ def normalize_extended_path(value: str) -> str:
     if value.startswith("\\\\?\\"):
         return value[4:]
     return value
+
+
+def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        return {row[1] for row in conn.execute(f'pragma table_info("{table}")').fetchall()}
+    except sqlite3.Error:
+        return set()
+
+
+def has_threads_columns(conn: sqlite3.Connection, required: set[str]) -> bool:
+    return required.issubset(table_columns(conn, "threads"))
+
+
+def bounded_text(value: str, limit: int) -> str:
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3].rstrip() + "..."
+
+
+def append_session_index_name(codex_home: Path, thread_id: str, name: str) -> None:
+    path = codex_home / "session_index.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "id": thread_id,
+        "thread_name": name,
+        "updated_at": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def report_thread_metadata_bloat(
+    conn: sqlite3.Connection,
+    *,
+    title_limit: int,
+    preview_limit: int,
+) -> None:
+    columns = table_columns(conn, "threads")
+    if not {"id", "title"}.issubset(columns):
+        report("thread_metadata_bloat skipped_missing_threads_columns")
+        return
+    archived_expr = "COALESCE(archived,0)=0" if "archived" in columns else "archived_at is null"
+    preview_col = "first_user_message" if "first_user_message" in columns else None
+    if preview_col:
+        row = conn.execute(
+            f"""
+            select
+              count(*),
+              coalesce(sum(length(title)), 0),
+              coalesce(sum(length(first_user_message)), 0),
+              coalesce(max(length(title)), 0),
+              coalesce(max(length(first_user_message)), 0),
+              sum(case when length(title) > ? then 1 else 0 end),
+              sum(case when length(first_user_message) > ? then 1 else 0 end),
+              sum(case when length(first_user_message) > 10000 then 1 else 0 end)
+            from threads
+            where {archived_expr}
+            """,
+            (title_limit, preview_limit),
+        ).fetchone()
+        (
+            active_rows,
+            title_chars,
+            preview_chars,
+            max_title,
+            max_preview,
+            title_over_limit,
+            preview_over_limit,
+            preview_over_10k,
+        ) = row
+    else:
+        row = conn.execute(
+            f"""
+            select
+              count(*),
+              coalesce(sum(length(title)), 0),
+              coalesce(max(length(title)), 0),
+              sum(case when length(title) > ? then 1 else 0 end)
+            from threads
+            where {archived_expr}
+            """,
+            (title_limit,),
+        ).fetchone()
+        active_rows, title_chars, max_title, title_over_limit = row
+        preview_chars = max_preview = preview_over_limit = preview_over_10k = 0
+
+    report(f"thread_active_rows {active_rows}")
+    report(f"thread_title_chars {title_chars}")
+    report(f"thread_first_user_message_chars {preview_chars}")
+    report(f"thread_max_title_chars {max_title}")
+    report(f"thread_max_first_user_message_chars {max_preview}")
+    report(f"thread_titles_over_limit {title_over_limit or 0}")
+    report(f"thread_first_user_message_over_limit {preview_over_limit or 0}")
+    report(f"thread_first_user_message_over_10k {preview_over_10k or 0}")
+
+
+def repair_thread_metadata_bloat(
+    conn: sqlite3.Connection,
+    codex_home: Path,
+    backup_root: Path,
+    *,
+    apply: bool,
+    details: bool,
+    title_limit: int,
+    preview_limit: int,
+) -> None:
+    required = {"id", "title"}
+    if not has_threads_columns(conn, required):
+        report("thread_metadata_repair skipped_missing_threads_columns")
+        return
+    columns = table_columns(conn, "threads")
+    has_preview = "first_user_message" in columns
+    archived_expr = "COALESCE(archived,0)=0" if "archived" in columns else "archived_at is null"
+    select_preview = "first_user_message" if has_preview else "''"
+    rows = conn.execute(
+        f"""
+        select id, title, {select_preview}
+        from threads
+        where {archived_expr}
+          and (
+            length(title) > ?
+            {"or length(first_user_message) > ?" if has_preview else ""}
+          )
+        """,
+        (title_limit, preview_limit) if has_preview else (title_limit,),
+    ).fetchall()
+
+    repairs: list[ThreadMetadataRepair] = []
+    for thread_id, title, preview in rows:
+        old_title = title or ""
+        old_preview = preview or ""
+        new_title = bounded_text(old_title, title_limit)
+        new_preview = bounded_text(old_preview, preview_limit) if has_preview else ""
+        if new_title != old_title or new_preview != old_preview:
+            repairs.append(
+                ThreadMetadataRepair(
+                    str(thread_id),
+                    old_title,
+                    new_title,
+                    old_preview,
+                    new_preview,
+                )
+            )
+
+    report(f"thread_metadata_repair_candidates {len(repairs)}")
+    for index, item in enumerate(repairs[:10], start=1):
+        label = f"thread_{index:03d}"
+        title_delta = len(item.old_title) - len(item.new_title)
+        preview_delta = len(item.old_preview) - len(item.new_preview)
+        if details:
+            report(
+                f"thread_metadata_repair_candidate {label} thread_id={item.thread_id} "
+                f"title_delta={title_delta} preview_delta={preview_delta}"
+            )
+        else:
+            report(
+                f"thread_metadata_repair_candidate {label} "
+                f"title_delta={title_delta} preview_delta={preview_delta}"
+            )
+
+    if not apply or not repairs:
+        return
+
+    manifest = backup_root / "thread-metadata-repairs.jsonl"
+    with manifest.open("w", encoding="utf-8") as handle:
+        for item in repairs:
+            record = {
+                "thread_id": item.thread_id,
+                "old_title": item.old_title,
+                "new_title": item.new_title,
+                "old_first_user_message": item.old_preview,
+                "new_first_user_message": item.new_preview,
+            }
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    cur = conn.cursor()
+    for item in repairs:
+        if has_preview:
+            cur.execute(
+                "update threads set title=?, first_user_message=? where id=?",
+                (item.new_title, item.new_preview, item.thread_id),
+            )
+        else:
+            cur.execute(
+                "update threads set title=? where id=?",
+                (item.new_title, item.thread_id),
+            )
+        if item.new_title and item.new_title != item.old_title:
+            append_session_index_name(codex_home, item.thread_id, item.new_title)
+    report("thread_metadata_repair applied")
+    report(f"thread_metadata_repair_manifest {manifest}")
+    write_thread_metadata_restore_script(manifest, codex_home / "state_5.sqlite", backup_root)
+
+
+def write_thread_metadata_restore_script(manifest: Path, state_db: Path, backup_root: Path) -> None:
+    restore = backup_root / "restore-thread-metadata.py"
+    restore.write_text(
+        f'''import json
+import sqlite3
+from pathlib import Path
+
+manifest = Path(r"{manifest}")
+db = Path(r"{state_db}")
+conn = sqlite3.connect(db)
+conn.execute("pragma busy_timeout=10000")
+cols = {{row[1] for row in conn.execute('pragma table_info("threads")').fetchall()}}
+has_preview = "first_user_message" in cols
+for line in manifest.read_text(encoding="utf-8").splitlines():
+    rec = json.loads(line)
+    if has_preview:
+        conn.execute(
+            "update threads set title=?, first_user_message=? where id=?",
+            (rec["old_title"], rec["old_first_user_message"], rec["thread_id"]),
+        )
+    else:
+        conn.execute(
+            "update threads set title=? where id=?",
+            (rec["old_title"], rec["thread_id"]),
+        )
+conn.commit()
+conn.close()
+''',
+        encoding="utf-8",
+    )
+    report(f"thread_metadata_restore_script {restore}")
 
 
 def normalize_sqlite_paths(conn: sqlite3.Connection, apply: bool) -> int:
@@ -530,6 +769,20 @@ def run(args: argparse.Namespace) -> int:
         conn = sqlite_connect(state_db, readonly=not effective_apply)
         conn.execute("pragma busy_timeout=10000")
         normalize_sqlite_paths(conn, effective_apply)
+        report_thread_metadata_bloat(
+            conn,
+            title_limit=args.thread_title_limit,
+            preview_limit=args.thread_preview_limit,
+        )
+        repair_thread_metadata_bloat(
+            conn,
+            codex_home,
+            backup_root,
+            apply=effective_apply and args.repair_thread_metadata_bloat,
+            details=args.details,
+            title_limit=args.thread_title_limit,
+            preview_limit=args.thread_preview_limit,
+        )
         candidates = active_session_candidates(conn, codex_home, args.archive_older_than_days)
         archive_sessions(conn, candidates, codex_home, backup_root, stamp, effective_apply, args.details)
         if effective_apply:
@@ -576,9 +829,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--archive-older-than-days", type=int, default=10)
     parser.add_argument("--worktree-older-than-days", type=int, default=7)
     parser.add_argument("--rotate-logs-above-mb", type=int, default=64)
+    parser.add_argument(
+        "--thread-title-limit",
+        type=int,
+        default=DEFAULT_TITLE_LIMIT,
+        help="Title length threshold for metadata-bloat reporting and optional repair.",
+    )
+    parser.add_argument(
+        "--thread-preview-limit",
+        type=int,
+        default=DEFAULT_PREVIEW_LIMIT,
+        help="Preview length threshold for metadata-bloat reporting and optional repair.",
+    )
+    parser.add_argument(
+        "--repair-thread-metadata-bloat",
+        action="store_true",
+        help="With --apply, trim oversized thread title/preview metadata. Default --apply only reports candidates.",
+    )
     args = parser.parse_args(argv)
     if args.apply and args.backup_only:
         parser.error("--apply and --backup-only cannot be used together")
+    if args.thread_title_limit < 20:
+        parser.error("--thread-title-limit must be at least 20")
+    if args.thread_preview_limit < args.thread_title_limit:
+        parser.error("--thread-preview-limit must be greater than or equal to --thread-title-limit")
     return args
 
 
