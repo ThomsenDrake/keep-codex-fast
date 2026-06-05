@@ -1,6 +1,6 @@
 ---
 name: "keep-codex-fast"
-description: "Use when Codex feels slow or bloated, when local sessions/logs/worktrees/config have grown over time, or when a user wants safe maintenance for Codex Desktop/CLI state. Provides a read-only report by default, backs up before applying changes, archives instead of deleting, normalizes Windows extended paths, prunes dead config projects, rotates large logs, and moves stale worktrees."
+description: "Use when Codex feels slow or bloated, when local sessions/logs/worktrees/config have grown over time, or when a user wants safe maintenance for Codex app/CLI/IDE local state on macOS or Windows. Provides a read-only report by default, backs up before applying changes, archives instead of deleting, discovers configured state/log paths, normalizes Windows extended paths, prunes dead config projects, rotates large logs, and moves only disposable stale worktrees."
 metadata:
   short-description: "Safe Codex local-state maintenance"
 ---
@@ -16,10 +16,10 @@ Primary principle: preserve continuity before applying changes. For active repo 
 - Inspect before mutating.
 - The first run must be report-only. Report mode must not write files, create backups, move folders, or change local Codex state.
 - Back up before applying changes. Use `--backup-only` when the user wants backups without moving or changing local state.
-- Archive or move files instead of deleting them. Do not permanently delete user chats, logs, worktrees, memories, skills, plugins, or automations.
+- Archive or move files instead of deleting them. Do not permanently delete user chats, logs, worktrees, memories, skills, plugins, MCP state, app connector state, or automations.
 - Write manifests and restore scripts when sessions/worktrees are moved.
 - If Codex is running, default to report-only. Apply changes only after Codex is closed or when the user explicitly accepts waiting for Codex to exit.
-- Never modify or copy credential files unless the user explicitly asks for that. Back up memory/skill/plugin/automation files before touching local state.
+- Never modify or copy credential files unless the user explicitly asks for that. Back up memory/skill/plugin/MCP/app/automation metadata before touching local state, and treat those backups as private.
 - Treat backup folders as private local artifacts because they can contain Codex metadata. Do not ask users to publish or share backups unless they have reviewed them first.
 - Do not print raw thread IDs, chat titles, local paths, or process paths unless the user asks for details or runs `--details`.
 - Before applying changes, tell the user to create handoff docs for active repo chats they may continue.
@@ -31,7 +31,7 @@ Primary principle: preserve continuity before applying changes. For active repo 
 There are three modes:
 
 - Inspect: report-only, no writes.
-- Maintain: normal `--apply`; backs up, archives old sessions, moves stale worktrees, rotates logs, prunes dead config, and normalizes paths. It does not trim thread title/preview metadata.
+- Maintain: normal `--apply`; backs up, archives old sessions, moves only disposable stale worktrees, rotates logs from configured locations, prunes dead config, and normalizes paths. It does not trim thread title/preview metadata.
 - Optional repair: `--apply --repair-thread-metadata-bloat`; shortens oversized SQLite display title/preview metadata after backup. The rollout transcript stays intact.
 
 ## Default Workflow
@@ -40,7 +40,7 @@ There are three modes:
 2. Run the bundled script in report mode:
 
 ```bash
-python scripts/keep_codex_fast.py
+python3 scripts/keep_codex_fast.py
 ```
 
 3. Summarize:
@@ -49,7 +49,9 @@ python scripts/keep_codex_fast.py
    - largest active sessions
    - thread metadata bloat: active title/preview character totals, max title/preview lengths, and over-limit counts
    - stale worktree candidates
+   - disposable stale worktree candidates and skipped worktree reasons
    - log size
+   - app-server daemon availability
    - bad Windows `\\?\` path counts
    - config project prune candidates
    - top Node/dev processes
@@ -60,13 +62,13 @@ python scripts/keep_codex_fast.py
 6. If the user wants to apply the recommended maintenance, ask them to close Codex or use `--wait-for-codex-exit`, then run:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktree-older-than-days 7
+python3 scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktree-older-than-days 7
 ```
 
 7. Verify after applying:
 
 ```bash
-python scripts/keep_codex_fast.py
+python3 scripts/keep_codex_fast.py
 ```
 
 8. Ask whether the user wants a recurring report-only reminder:
@@ -74,16 +76,16 @@ python scripts/keep_codex_fast.py
    - biweekly for lighter use
    - no reminder if they prefer manual maintenance
 
-If the user wants automation and the Codex app automation tool is available, create only a recurring report/reminder automation. Do not recommend recurring mutating maintenance, because automation cannot know whether the user created handoffs. The prompt must say not to pass `--apply`, not to archive/move/prune/rotate/normalize/delete/mutate local state, and to remind the user that manual apply should happen only after handoffs are confirmed and Codex is closed.
+If the user wants automation and the Codex app automation tool is available, create only a recurring report/reminder automation. Current Codex automations can appear in the Triage inbox and may run as project, standalone, or thread automations. For Git projects they may use worktree mode; for non-Git projects they may run in the project folder. Project-scoped automations require the local app to be running and the project to remain on disk. Do not recommend recurring mutating maintenance, because automation cannot know whether the user created handoffs. The prompt must say not to pass `--apply`, not to archive/move/prune/rotate/normalize/delete/mutate local state, and to remind the user that manual apply should happen only after handoffs are confirmed and Codex is closed.
 
 ## What Apply Does
 
-- Backs up important metadata to `~/Documents/Codex/codex-backups/keep-codex-fast-*`.
-- Archives old non-pinned sessions to `~/.codex/archived_sessions/`.
+- Backs up important metadata to `~/Documents/Codex/codex-backups/keep-codex-fast-*`, including configured SQLite state when `sqlite_home` is set.
+- Archives old non-pinned sessions. If a reachable Codex app-server daemon is available, it tries the official `thread/archive` path first; otherwise it falls back to the offline SQLite/JSONL archive path only when direct state writes are allowed.
 - Normalizes Windows extended paths like `\\?\C:\...` inside local SQLite text fields.
-- Prunes missing/temp project blocks from `config.toml` and writes UTF-8 without BOM.
-- Moves stale worktrees to `~/.codex/archived_worktrees/`.
-- Rotates `logs_2.sqlite*` into `~/.codex/archived_logs/` only when above the threshold.
+- Prunes missing/temp project blocks from `config.toml` after TOML parsing and writes UTF-8 without BOM.
+- Moves only stale disposable Codex-managed worktrees to `~/.codex/archived_worktrees/`. It skips worktrees that are referenced by metadata, branch-attached, dirty, marked keep/permanent, or not recognizable as disposable Codex-managed worktrees.
+- Rotates `logs_2.sqlite*` from configured `log_dir` plus the legacy `~/.codex` fallback into `~/.codex/archived_logs/` only when above the threshold.
 - Reports heavy Node processes without killing them.
 - Reports pathological active thread titles and `first_user_message` previews. It only repairs them when the user explicitly opts in with `--repair-thread-metadata-bloat`.
 
@@ -94,28 +96,28 @@ Report mode does none of those mutations. It only prints counts and pseudonymous
 - Keep only the last 7-10 days of non-pinned chats active.
 - Use handoff docs for important old threads.
 - Start fresh threads from handoff docs instead of repeatedly resuming giant chats.
-- Run weekly maintenance if Codex is used daily across many repos/terminals.
+- Run weekly maintenance if Codex app/CLI/IDE is used daily across many repos/terminals.
 - Offer weekly or biweekly report-only reminders after the first successful apply; do not assume the user wants recurring maintenance.
 - When in doubt, leave a chat active or ask the user. Never archive a chat that is pinned, current, or explicitly marked as still needed without a handoff.
 - Treat title/preview repair as metadata repair only. The full rollout transcript remains in the session JSONL; bounded SQLite fields are for list/navigation display.
 
 ## Thread Metadata Bloat
 
-Codex Desktop can become slow when `threads.title` or `threads.first_user_message` stores a full prompt/history-sized value instead of a display title or preview. This affects the thread list/navigation path before the UI renders anything.
+Codex app navigation can become slow when `threads.title` or `threads.first_user_message` stores a full prompt/history-sized value instead of a display title or preview. This affects the thread list/navigation path before the UI renders anything.
 
 The script reports active thread count, total title/preview characters, maximum title/preview length, active titles over the configured title limit, and active previews over the configured preview limit and over 10k characters.
 
 Normal apply mode reports metadata-bloat candidates but does not repair them. If the user explicitly opts in, after backups and only when Codex is not running, run:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
+python3 scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
 ```
 
 That bounds active `threads.title` and `threads.first_user_message` values. Defaults are 120 characters for titles and 240 characters for previews. It also appends repaired titles to `session_index.jsonl`, matching current upstream name-update storage, so reconciliation/name lookup does not immediately prefer the old full-message fallback.
 
 The targeted repair manifest stores the old full title/preview values so the change can be reversed. Treat `thread-metadata-repairs.jsonl`, `restore-thread-metadata.py`, and the whole backup folder as private local artifacts.
 
-This is a local maintenance workaround for metadata bloat. It does not solve app renderer hydration of very large rollout histories; that needs upstream staged/paged thread loading.
+This is a local maintenance workaround for metadata bloat when no first-class app API solves the displayed bloat. It does not solve app renderer hydration of very large rollout histories; that needs upstream staged/paged thread loading.
 
 ## Handoff Doc + Reactivation Prompt
 
@@ -179,6 +181,7 @@ The reminder should:
 - never archive, move, prune, rotate, normalize, delete, or mutate local Codex state
 - remind me to create comprehensive handoff docs and reactivation prompts for active repo chats before any manual apply
 - summarize active session size, archived session size, extended path candidates, old session candidates, worktree candidates, log size, and top Node/dev processes
+- include disposable worktree candidates, skipped worktree reasons, configured state/log path awareness, and app-server availability when present
 - report heavy Node/dev processes without killing them
 - tell me that manual apply should only happen after I confirm handoffs exist or are not needed and Codex is closed
 ```

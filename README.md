@@ -2,7 +2,7 @@
 
 ![Keep Codex Fast cover](assets/keep-codex-fast-cover.png)
 
-When Codex starts feeling heavy after weeks of chats, terminals, logs, worktrees, and project history, this gives you a calm way to inspect what is going on and reduce local drag.
+When Codex app, CLI, or IDE starts feeling heavy after weeks of chats, terminals, logs, worktrees, and project history, this gives you a calm way to inspect what is going on and reduce local drag.
 
 This skill helps you organize local state without losing context.
 
@@ -13,7 +13,7 @@ The rule is simple:
 ## Three Modes
 
 - **Inspect:** report-only, no writes.
-- **Maintain:** normal apply; backs up, archives old sessions, moves stale worktrees, rotates logs, prunes dead config, and normalizes paths. It does not trim thread title/preview metadata.
+- **Maintain:** normal apply; backs up, archives old sessions, moves only disposable stale worktrees, rotates logs from configured locations, prunes dead config, and normalizes paths. It does not trim thread title/preview metadata.
 - **Optional repair:** only with `--apply --repair-thread-metadata-bloat`; shortens oversized SQLite display title/preview metadata after backup. The transcript stays intact.
 
 ## Who This Is For
@@ -37,9 +37,11 @@ It helps Codex:
 - back up important state before applying changes
 - archive old chats instead of deleting them
 - detect pathological thread title/preview metadata that can slow chat navigation
-- move stale worktrees out of the hot path
+- move only disposable stale Codex-managed worktrees out of the hot path
 - rotate large logs
 - prune dead project references
+- honor configured `sqlite_home` and `log_dir`
+- report app-server daemon availability and use official thread archiving when available
 - report heavy Node/dev processes without killing them
 
 ## Quick Start
@@ -97,7 +99,7 @@ Use $keep-codex-fast to apply safe Codex maintenance.
 
 Before changing anything, confirm that important active repo chats have handoff docs or do not need them.
 
-Then back up first, archive instead of deleting, move stale worktrees, rotate large logs, prune dead config references, and verify the result.
+Then back up first, archive instead of deleting, move only disposable stale Codex-managed worktrees, rotate large logs, prune dead config references, and verify the result.
 
 If Codex is currently running, do not mutate local state. Tell me to close Codex first.
 ```
@@ -109,7 +111,7 @@ Some Codex builds can store a full first user prompt as both the thread title an
 The script reports title and preview payload size in report mode and normal apply mode. It does not trim this metadata unless you explicitly opt in:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
+python3 scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
 ```
 
 With that flag, after backing up and only when Codex is not running, it trims active SQLite title/preview metadata to bounded display values. It also appends repaired titles to `session_index.jsonl`, which matches current Codex name-update storage.
@@ -124,7 +126,7 @@ If you are using the skill normally, this repair does not happen automatically. 
 
 Recurring maintenance should be a reminder, not an automatic apply.
 
-Why: an automation cannot know whether you created handoffs for chats you still care about. It should inspect and remind you, but not archive, move, prune, rotate, normalize, delete, or mutate anything by itself.
+Why: an automation cannot know whether you created handoffs for chats you still care about. Current Codex app automations may run as project, standalone, or thread automations; Git projects may use worktree mode, and project-scoped automations require the local app and project folder to remain available. Automations should inspect and remind you, but not archive, move, prune, rotate, normalize, delete, or mutate anything by themselves.
 
 Copy this into Codex:
 
@@ -139,6 +141,7 @@ The reminder should:
 - never archive, move, prune, rotate, normalize, delete, or mutate local Codex state
 - remind me to create comprehensive handoff docs and reactivation prompts for active repo chats before any manual apply
 - summarize active session size, archived session size, extended path candidates, old session candidates, worktree candidates, log size, and top Node/dev processes
+- include disposable worktree candidates, skipped worktree reasons, configured state/log path awareness, and app-server availability when present
 - report heavy Node/dev processes without killing them
 - tell me that manual apply should only happen after I confirm handoffs exist or are not needed and Codex is closed
 ```
@@ -160,19 +163,19 @@ Most users can stay inside Codex and use the prompts above. The script is here f
 Report only. This is read-only and privacy-safe by default:
 
 ```bash
-python scripts/keep_codex_fast.py
+python3 scripts/keep_codex_fast.py
 ```
 
 Show raw thread IDs, chat titles, paths, and process paths only when you need detail:
 
 ```bash
-python scripts/keep_codex_fast.py --details
+python3 scripts/keep_codex_fast.py --details
 ```
 
 Create backups only, without moving or changing local state:
 
 ```bash
-python scripts/keep_codex_fast.py --backup-only
+python3 scripts/keep_codex_fast.py --backup-only
 ```
 
 Backup folders can contain private local Codex metadata. Keep them on your machine, and do not publish or share them unless you have reviewed what is inside.
@@ -180,19 +183,19 @@ Backup folders can contain private local Codex metadata. Keep them on your machi
 Apply core maintenance actions. This does not trim thread title/preview metadata:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktree-older-than-days 7
+python3 scripts/keep_codex_fast.py --apply --archive-older-than-days 10 --worktree-older-than-days 7
 ```
 
 Optionally repair oversized title/preview metadata only when the report recommends it:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
+python3 scripts/keep_codex_fast.py --apply --repair-thread-metadata-bloat
 ```
 
 Wait for Codex to exit before applying:
 
 ```bash
-python scripts/keep_codex_fast.py --apply --wait-for-codex-exit
+python3 scripts/keep_codex_fast.py --apply --wait-for-codex-exit
 ```
 
 ## What Can Change
@@ -200,8 +203,8 @@ python scripts/keep_codex_fast.py --apply --wait-for-codex-exit
 The skill can safely handle:
 
 - old non-pinned active sessions
-- stale worktrees
-- large `logs_2.sqlite*` files
+- disposable stale Codex-managed worktrees
+- large `logs_2.sqlite*` files under configured `log_dir` or the legacy Codex home fallback
 - dead/temp project entries in `config.toml`
 - Windows `\\?\C:\...` path mismatches in local SQLite text fields
 - oversized thread title and first-message preview metadata in `state_5.sqlite`, only with `--repair-thread-metadata-bloat`
